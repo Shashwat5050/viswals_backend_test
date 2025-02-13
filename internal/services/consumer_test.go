@@ -113,7 +113,7 @@ type UserDetailsTest struct {
 }
 
 // TestToUserDetails validates the ToUserDetails function with different inputs.
-func TestToUserDetails(t *testing.T) {
+func TestConvertToUserDetails(t *testing.T) {
 	// Setup logger and encryption
 	logger, err := zap.NewDevelopment()
 	assert.NoError(t, err)
