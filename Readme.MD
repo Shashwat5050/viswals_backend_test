@@ -54,5 +54,12 @@ Follow these steps to build, containerize, and run the application in a Dockeriz
 
 2. **Access the API**:
    Once the containers are up and running, you can access the API at `http://localhost:8080`.
-   
+
+3. **Verify Services**:
+   Use tools like curl or Postman to test API endpoints. For RabbitMQ, you can verify the queue status by accessing the RabbitMQ management console at http://localhost:15672.
+
+## Additional Notes
+   Ensure that all environment variables in the docker-compose.yml file are properly configured before starting the application.
+
+
 
