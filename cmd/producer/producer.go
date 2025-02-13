@@ -15,88 +15,89 @@ import (
 )
 
 var (
-	defaultBatchSize = 5
-	DevEnvironment   = "dev"
+	defaultChunkSize = 5
+	DevelopmentMode  = "dev"
 )
 
 func main() {
-	csvFilePath := flag.String("csv", "", "Path to CSV file")
+	csvPath := flag.String("csv", "", "Path to the CSV file")
 	flag.Parse()
 
-	if csvFilePath == nil || *csvFilePath == "" {
-		fmt.Println("CSV file path is not found in -csv flag looking for env var")
-		path, ok := os.LookupEnv("CSV_FILE_PATH")
-		if !ok {
-			fmt.Println("csv file path is not found in flag and env var,")
-			fmt.Println("you can specify csv file with either -csv flag or providing CSV_FILE_PATH environment variable")
+	if csvPath == nil || *csvPath == "" {
+		fmt.Println("CSV file path not provided in -csv flag. Checking environment variable...")
+		filePath, exists := os.LookupEnv("CSV_FILE_PATH")
+		if !exists {
+			fmt.Println("CSV file path not found in flag or environment variable.")
+			fmt.Println("Provide the CSV file path using the -csv flag or the CSV_FILE_PATH environment variable.")
 			return
 		}
-		csvFilePath = &path
+		csvPath = &filePath
 	}
 
-	// initialize the logger
-	log, err := logger.Init(os.Stdout, strings.ToLower(os.Getenv("ENVIRONMENT")) == DevEnvironment)
+	// Initialize the logger
+	log, err := logger.Init(os.Stdout, strings.ToLower(os.Getenv("ENVIRONMENT")) == DevelopmentMode)
 	if err != nil {
-		fmt.Println("Error initializing logger:", err)
+		fmt.Println("Logger initialization failed:", err)
 		return
 	}
 
-	// open csv file as csv reader.
-	csvReader, err := csvutils.OpenFile(*csvFilePath)
+	// Open the CSV file as a reader
+	csvReader, err := csvutils.OpenFile(*csvPath)
 	if err != nil {
-		log.Error("failed to open csv file ", zap.Error(err), zap.String("csvFilePath", *csvFilePath))
+		log.Error("Unable to open the CSV file", zap.Error(err), zap.String("csvPath", *csvPath))
 		return
 	}
 
-	// create connection with queue provider.
-	queueConnection, ok := os.LookupEnv("RABBITMQ_CONNECTION_STRING")
-	if !ok {
-		log.Error("can't find rabbitmq connection string please provide environment variable RABBITMQ_CONNECTION_STRING")
+	// Establish a connection with the message broker
+	rabbitConnString := os.Getenv("RABBITMQ_CONNECTION_STRING")
+	if rabbitConnString == "" {
+		log.Error("Missing RabbitMQ connection string. Please set the RABBITMQ_CONNECTION_STRING environment variable.")
 		return
 	}
 
-	queueName, ok := os.LookupEnv("RABBITMQ_QUEUE_NAME")
-	if !ok {
-		log.Error("can't find queue name please provide environment variable RABBITMQ_QUEUE_NAME")
+	rabbitQueueName := os.Getenv("RABBITMQ_QUEUE_NAME")
+	if rabbitQueueName == "" {
+		log.Error("Missing RabbitMQ queue name. Please set the RABBITMQ_QUEUE_NAME environment variable.")
 		return
 	}
 
-	queueService, err := rabbitmq.New(queueConnection, queueName)
+	messageQueue, err := rabbitmq.New(rabbitConnString, rabbitQueueName)
 	if err != nil {
-		log.Error("failed to create rabbitmq queue", zap.Error(err), zap.String("queueName", queueName))
+		log.Error("Failed to initialize RabbitMQ queue", zap.Error(err), zap.String("queueName", rabbitQueueName))
 		return
 	}
 
-	// initializing producer service.
-	producer := services.NewProducer(csvReader, queueService, log)
+	// Initialize the producer service
+	dataProducer := services.NewProducer(csvReader, messageQueue, log)
 	defer func() {
-		err := producer.Close()
+		err := dataProducer.Close()
 		if err != nil {
-			log.Error("failed to close rabbitmq producer", zap.Error(err), zap.String("queueName", queueName))
+			log.Error("Error closing RabbitMQ producer", zap.Error(err), zap.String("queueName", rabbitQueueName))
 		}
 	}()
 
-	// start the producer service
-	batchSize := defaultBatchSize
-	batchSizeStr, ok := os.LookupEnv("BATCH_SIZE_PRODUCER")
-	if !ok {
-		log.Error(fmt.Sprintf("can't find batch size using default batch size of %v, you can provide environment variable BATCH_SIZE for custome batch size", defaultBatchSize))
+	// Determine chunk size for processing
+	chunkSize := defaultChunkSize
+	chunkSizeEnv, exists := os.LookupEnv("BATCH_SIZE_PRODUCER")
+	if !exists {
+		log.Warn(fmt.Sprintf("Batch size not set. Using default chunk size of %d. Set the BATCH_SIZE_PRODUCER environment variable for customization.", defaultChunkSize))
 	} else {
-		size, err := strconv.Atoi(batchSizeStr)
+		size, err := strconv.Atoi(chunkSizeEnv)
 		if err != nil {
-			log.Error("batch size is not a number", zap.Error(err), zap.String("batchSizeStr", batchSizeStr))
+			log.Error("Invalid batch size value. Ensure it is a number.", zap.Error(err), zap.String("batchSizeEnv", chunkSizeEnv))
 			return
 		}
-		batchSize = size
+		chunkSize = size
 	}
 
-	log.Info("starting producer", zap.Int("batchSize", batchSize))
+	log.Info("Initializing the producer service", zap.Int("chunkSize", chunkSize))
 
-	err = producer.Start(batchSize)
+	// Start the producer
+	err = dataProducer.Start(chunkSize)
 	if err != nil {
-		log.Error("failed to start producer", zap.Error(err), zap.String("queueName", queueName))
+		log.Error("Producer service failed to start", zap.Error(err), zap.String("queueName", rabbitQueueName))
 		return
 	}
 
-	log.Info("Producer has completed its work")
+	log.Info("Producer operation completed successfully.")
 }

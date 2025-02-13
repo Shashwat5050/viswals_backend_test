@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Server Sent Events</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background-color: #f0f2f5;
+        margin: 0;
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+
+      .container {
+        max-width: 800px;
+        width: 100%;
+      }
+
+      h1 {
+        text-align: center;
+        color: #333;
+      }
+
+      .view-toggle {
+        margin-bottom: 20px;
+        display: flex;
+        justify-content: center;
+        gap: 10px;
+      }
+
+      .view-toggle button {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        background-color: #007bff;
+        color: white;
+        font-size: 16px;
+        transition: background-color 0.3s;
+      }
+
+      .view-toggle button:hover {
+        background-color: #0056b3;
+      }
+
+      .hidden {
+        display: none;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 20px;
+        background-color: white;
+        border: 1px solid #ccc;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+
+      table, th, td {
+        border: 1px solid #ddd;
+      }
+
+      th, td {
+        padding: 8px;
+        text-align: left;
+      }
+
+      th {
+        background-color: #007bff;
+        color: white;
+      }
+
+      .user-card {
+        background-color: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        padding: 20px;
+        margin-bottom: 20px;
+        animation: fadeIn 0.5s ease-in;
+      }
+
+      .user-header {
+        display: flex;
+        align-items: center;
+        margin-bottom: 15px;
+      }
+
+      .user-avatar {
+        width: 50px;
+        height: 50px;
+        background-color: #e3e9ff;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-right: 15px;
+        font-size: 20px;
+        color: #4a4a4a;
+      }
+
+      .user-name {
+        font-size: 18px;
+        font-weight: bold;
+        color: #333;
+      }
+
+      .user-details {
+        display: grid;
+        grid-template-columns: 120px 1fr;
+        gap: 8px;
+        font-size: 14px;
+      }
+
+      .label {
+        color: #666;
+        font-weight: 500;
+      }
+
+      .value {
+        color: #333;
+      }
+
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Server Sent Events</h1>
+
+    <div class="view-toggle">
+      <button onclick="showTable()">Table View</button>
+      <button onclick="showCards()">Card View</button>
+    </div>
+
+    <div class="container">
+      <!-- Table View -->
+      <table id="tableView">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>First Name</th>
+            <th>Last Name</th>
+            <th>Email</th>
+            <th>Created At</th>
+            <th>Deleted At</th>
+            <th>Merged At</th>
+            <th>Parent User ID</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+
+      <!-- Card View -->
+      <div id="cardView" class="hidden"></div>
+    </div>
+
+    <script>
+      const sse = new EventSource("http://localhost:8080/users/sse?limit=10");
+
+      function formatDate(dateString) {
+        if (!dateString) return "-";
+        const date = new Date(dateString);
+        return date.toLocaleString();
+      }
+
+      function getInitials(firstName, lastName) {
+        return `${firstName[0]}${lastName[0]}`;
+      }
+
+      function createUserCard(user) {
+        const card = document.createElement("div");
+        card.className = "user-card";
+
+        card.innerHTML = `
+          <div class="user-header">
+            <div class="user-avatar">${getInitials(user.first_name, user.last_name)}</div>
+            <div class="user-name">${user.first_name} ${user.last_name}</div>
+          </div>
+          <div class="user-details">
+            <div class="label">ID:</div>
+            <div class="value">${user.id || "-"}</div>
+            <div class="label">Email:</div>
+            <div class="value">${user.email || "-"}</div>
+            <div class="label">Created:</div>
+            <div class="value">${formatDate(user.created_at)}</div>
+            <div class="label">Deleted:</div>
+            <div class="value">${formatDate(user.deleted_at)}</div>
+            <div class="label">Merged:</div>
+            <div class="value">${formatDate(user.merged_at)}</div>
+            <div class="label">Parent User ID:</div>
+            <div class="value">${user.parent_user_id || "-"}</div>
+          </div>`;
+
+        return card;
+      }
+
+      sse.onmessage = function (event) {
+        try {
+          if (event.data === "END") return;
+
+          const users = JSON.parse(event.data);
+          const tableBody = document.querySelector("#tableView tbody");
+          const cardContainer = document.querySelector("#cardView");
+
+          users.forEach((user) => {
+            // Add to table view
+            const row = document.createElement("tr");
+            Object.values(user).forEach((value) => {
+              const cell = document.createElement("td");
+              cell.textContent = typeof value === "object" ? value?.Time || "-" : value;
+              row.appendChild(cell);
+            });
+            tableBody.appendChild(row);
+
+            // Add to card view
+            const userCard = createUserCard(user);
+            cardContainer.appendChild(userCard);
+          });
+        } catch (error) {
+          console.error("Error parsing JSON data:", error);
+        }
+      };
+
+      sse.onclose = function () {
+        console.log("All data has been received successfully");
+        sse.close();
+      };
+
+      sse.onerror = function (ev) {
+        console.log("Error receiving data", ev);
+        sse.close();
+      };
+
+      function showTable() {
+        document.getElementById("tableView").classList.remove("hidden");
+        document.getElementById("cardView").classList.add("hidden");
+      }
+
+      function showCards() {
+        document.getElementById("cardView").classList.remove("hidden");
+        document.getElementById("tableView").classList.add("hidden");
+      }
+    </script>
+  </body>
+</html>
