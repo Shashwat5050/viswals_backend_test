@@ -21,7 +21,7 @@ func TestStart(t *testing.T) {
 
 	mockQueue.On("Publish", mock.Anything, mock.AnythingOfType("[]uint8")).Return(nil)
 
-	csvReader, err := csvutils.OpenFile("../../csvfiles/test.csv")
+	csvReader, err := csvutils.OpenFile("../../core/csvfiles/test.csv")
 	assert.NoError(t, err)
 
 	log, err := zap.NewDevelopment()
@@ -38,7 +38,7 @@ func TestStart(t *testing.T) {
 	mockQueue.AssertExpectations(t)
 }
 
-func TestPublish(t *testing.T) {
+func TestPublishMessage(t *testing.T) {
 	// Mock publishers
 	publisher := new(mockrabbitmq.MockRabbitMQ)
 	publisherWithError := new(mockrabbitmq.MockRabbitMQ)
@@ -105,7 +105,7 @@ func TestPublish(t *testing.T) {
 	publisherWithError.AssertExpectations(t)
 }
 
-func TestCsvParser(t *testing.T) {
+func TestConvertCsvToStruct(t *testing.T) {
 	// Test cases for CSV parsing
 	testCases := []struct {
 		name   string
