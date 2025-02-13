@@ -1,0 +1,98 @@
+version: '3.8'
+
+services:
+  rabbitmq:
+    image: rabbitmq:latest
+    container_name: rabbitmq
+    ports:
+      - "15672:15672"
+      - "5672:5672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres:
+    image: postgres:latest
+    container_name: postgres
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: pg_isready -U postgres -d postgres
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:latest
+    container_name: redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test:  ["CMD", "redis-cli","ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  producer:
+    build:
+      context: .
+      dockerfile: DockerFile-producer
+    container_name: producer
+    environment:
+      - RABBITMQ_CONNECTION_STRING=amqp://guest:guest@rabbitmq:5672/
+      - RABBITMQ_QUEUE_NAME=users_details_queue
+      - CSV_FILE_PATH=./core/csvfiles/users.csv
+      - ENVIRONMENT=dev
+      - BATCH_SIZE_PRODUCER=8190
+      - ENCRYPTION_KEY=a8z9WmX2pQJ5YcQ6dT7m9LqFkX4r7BsY
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  consumer:
+    build:
+      context: .
+      dockerfile: DockerFile-consumer
+    container_name: consumer
+    environment:
+      - POSTGRES_CONNECTION_STRING=postgres://postgres:postgres@postgres:5432/postgres?sslmode=disable
+      - RABBITMQ_CONNECTION_STRING=amqp://guest:guest@rabbitmq:5672/
+      - REDIS_CONNECTION_STRING=redis://default:@redis:6379/
+      - RABBITMQ_QUEUE_NAME=users_details_queue
+      - DATABASE_NAME=postgres
+      - HTTP_PORT=8080
+      - ENVIRONMENT=prod
+      - CHANNEL_SIZE=150
+      - REDIS_TTL=60s
+      - MIGRATION=true
+      - ENCRYPTION_KEY=a8z9WmX2pQJ5YcQ6dT7m9LqFkX4r7BsY
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+
+
+
+volumes:
+  postgres_data:
+

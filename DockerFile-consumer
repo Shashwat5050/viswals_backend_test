@@ -1,0 +1,35 @@
+# Base stage for building the application
+FROM golang:1.23 AS builder
+
+# Set working directory inside the container
+WORKDIR /app
+
+# Copy dependency files first
+COPY go.mod go.sum ./
+
+# Download and cache dependencies
+RUN go mod download
+
+# Copy the remaining application files
+COPY . .
+
+# Build the consumer binary
+RUN CGO_ENABLED=0 go build -o consumer ./cmd/consumer/
+
+# Final stage for producing a minimal image
+FROM scratch AS runtime
+
+# Set working directory for runtime stage
+WORKDIR /app
+
+# Copy the consumer binary from the builder stage
+COPY --from=builder /app/consumer .
+
+# Copy migration files
+COPY --from=builder /app/migration/ ./migration/
+
+# Copy client files for the web interface
+COPY --from=builder /app/web/ ./web/
+
+# Set the command to run the consumer binary
+ENTRYPOINT ["./consumer"]
