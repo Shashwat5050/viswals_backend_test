@@ -20,14 +20,14 @@ var (
 
 type Producer struct {
 	csvReader *csv.Reader
-	queue     MessageBroker
+	broker     MessageBroker
 	logger    *zap.Logger
 }
 
-func NewProducer(csvReader *csv.Reader, queue MessageBroker, logger *zap.Logger) *Producer {
+func NewProducer(csvReader *csv.Reader, broker MessageBroker, logger *zap.Logger) *Producer {
 	return &Producer{
 		csvReader: csvReader,
-		queue:     queue,
+		broker:     broker,
 		logger:    logger,
 	}
 }
@@ -54,14 +54,14 @@ func (p *Producer) Start(batchSize int) error {
 		}
 
 		// transform fetched rows to user struct
-		data := p.CsvToStruct(rows)
+		data := p.ConvertCsvToStruct(rows)
 		if data == nil {
 			continue
 		}
 
 		// publish data to queue
 		ctx, cancel := context.WithTimeout(context.Background(), defaultPublishTimeout)
-		err = p.Publish(ctx, data)
+		err = p.PublishMessages(ctx, data)
 		if err != nil {
 			cancel()
 			p.logger.Error("error publishing data ", zap.Error(err))
@@ -78,21 +78,21 @@ func (p *Producer) Start(batchSize int) error {
 	return nil
 }
 
-func (p *Producer) Publish(ctx context.Context, data []*models.UserDetails) error {
+func (p *Producer) PublishMessages(ctx context.Context, data []*models.UserDetails) error {
 	jsonData, err := json.Marshal(data)
 	if err != nil {
 		p.logger.Error("error marshaling data to queue", zap.Error(err))
 		return err
 	}
 
-	if err := p.queue.Publish(ctx, jsonData); err != nil {
+	if err := p.broker.Publish(ctx, jsonData); err != nil {
 		p.logger.Error("error publishing data to queue", zap.Error(err))
 		return err
 	}
 	return nil
 }
 
-func (p *Producer) CsvToStruct(data [][]string) []*models.UserDetails {
+func (p *Producer)ConvertCsvToStruct(data [][]string) []*models.UserDetails {
 	var result []*models.UserDetails
 
 	for _, row := range data {
@@ -185,5 +185,5 @@ func (p *Producer) CsvToStruct(data [][]string) []*models.UserDetails {
 }
 
 func (p *Producer) Close() error {
-	return p.queue.Close()
+	return p.broker.Close()
 }

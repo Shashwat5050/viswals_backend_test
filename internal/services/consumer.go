@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	amqp "github.com/rabbitmq/amqp091-go"
-	"github.com/viswals_backend_test/core/models"
 	"github.com/viswals_backend_test/core/encryptions"
+	"github.com/viswals_backend_test/core/models"
 	"go.uber.org/zap"
 	"sync"
 	"time"
@@ -17,29 +17,28 @@ var (
 )
 
 type Consumer struct {
-	queue   MessageBroker
+	broker  MessageBroker
 	channel <-chan amqp.Delivery
 	logger  *zap.Logger
-	// extending consumer to provide http server and database access.
-	userStore userStoreProvider
-	memStore  CacheManager
-	encryp    *encryptions.Encryption
+	userRepo UserRepository
+	memStore CacheManager
+	encryp   *encryptions.Encryption
 }
 
-func NewConsumer(queue MessageBroker, userStore userStoreProvider, memStore CacheManager, encryp *encryptions.Encryption, logger *zap.Logger) (*Consumer, error) {
+func NewConsumer(broker MessageBroker, userRepo UserRepository, memStore CacheManager, encryp *encryptions.Encryption, logger *zap.Logger) (*Consumer, error) {
 	// connect with the initialized queue.
-	in, err := queue.Subscribe()
+	in, err := broker.Subscribe()
 	if err != nil {
 		return nil, err
 	}
 
 	return &Consumer{
-		queue:     queue,
-		channel:   in,
-		logger:    logger,
-		userStore: userStore,
-		encryp:    encryp,
-		memStore:  memStore,
+		broker:   broker,
+		channel:  in,
+		logger:   logger,
+		userRepo: userRepo,
+		encryp:   encryp,
+		memStore: memStore,
 	}, nil
 }
 
@@ -55,25 +54,23 @@ func (c *Consumer) Consume(wg *sync.WaitGroup, size int) {
 	var internalWg = new(sync.WaitGroup)
 
 	internalWg.Add(1)
-	go c.ToUserDetails(internalWg, userDetailsInput, userDetailsOutput, errorChan)
+	go c.convertToUserDetails(internalWg, userDetailsInput, userDetailsOutput, errorChan)
 
 	internalWg.Add(1)
-	go c.EncryptData(internalWg, userDetailsOutput, encryptionOutput, errorChan)
+	go c.encryptUserData(internalWg, userDetailsOutput, encryptionOutput, errorChan)
 
 	internalWg.Add(1)
-	go c.SaveUserDetails(internalWg, encryptionOutput, errorChan)
+	go c.saveUserData(internalWg, encryptionOutput, errorChan)
 
 	internalWg.Add(1)
-	go c.errorLogger(internalWg, errorChan)
+	go c.logErrors(internalWg, errorChan)
 
 	for data := range c.channel {
 		body := data.Body
 
 		if body == nil {
-			//TODO: revert back this changes
 			c.logger.Error("maybe data is complete")
 			break
-			//continue
 		}
 
 		userDetailsInput <- body
@@ -85,14 +82,14 @@ func (c *Consumer) Consume(wg *sync.WaitGroup, size int) {
 	internalWg.Wait()
 }
 
-func (c *Consumer) errorLogger(wg *sync.WaitGroup, errorChan chan error) {
+func (c *Consumer) logErrors(wg *sync.WaitGroup, errorChan chan error) {
 	defer wg.Done()
 	for e := range errorChan {
 		c.logger.Error("error in consumer as", zap.Error(e))
 	}
 }
 
-func (c *Consumer) ToUserDetails(wg *sync.WaitGroup, inputChan chan []byte, outputChan chan []*models.UserDetails, errorChan chan error) {
+func (c *Consumer)convertToUserDetails(wg *sync.WaitGroup, inputChan chan []byte, outputChan chan []*models.UserDetails, errorChan chan error) {
 	defer wg.Done()
 	defer close(outputChan)
 	for data := range inputChan {
@@ -108,7 +105,7 @@ func (c *Consumer) ToUserDetails(wg *sync.WaitGroup, inputChan chan []byte, outp
 	c.logger.Info(fmt.Sprintf("User Data Marsheller stopped"))
 }
 
-func (c *Consumer) EncryptData(wg *sync.WaitGroup, inputChan chan []*models.UserDetails, outputChan chan []*models.UserDetails, errorChan chan error) {
+func (c *Consumer) encryptUserData(wg *sync.WaitGroup, inputChan chan []*models.UserDetails, outputChan chan []*models.UserDetails, errorChan chan error) {
 	defer wg.Done()
 	defer close(outputChan)
 	for data := range inputChan {
@@ -128,7 +125,7 @@ func (c *Consumer) EncryptData(wg *sync.WaitGroup, inputChan chan []*models.User
 	c.logger.Info("user data encrypter has completed its work")
 }
 
-func (c *Consumer) SaveUserDetails(wg *sync.WaitGroup, inputChan chan []*models.UserDetails, errorChan chan error) {
+func (c *Consumer) saveUserData(wg *sync.WaitGroup, inputChan chan []*models.UserDetails, errorChan chan error) {
 	defer wg.Done()
 	defer close(errorChan)
 	for data := range inputChan {
@@ -136,7 +133,7 @@ func (c *Consumer) SaveUserDetails(wg *sync.WaitGroup, inputChan chan []*models.
 		go func() {
 
 			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(len(data))*defaultTimeout)
-			err := c.userStore.CreateBulkUsers(ctx, data)
+			err := c.userRepo.CreateBulkUsers(ctx, data)
 			if err != nil {
 				c.logger.Error("error inserting data into database", zap.Error(err))
 				errorChan <- err
@@ -151,8 +148,6 @@ func (c *Consumer) SaveUserDetails(wg *sync.WaitGroup, inputChan chan []*models.
 			if err != nil {
 				c.logger.Warn("error inserting data into cache", zap.Error(err))
 				errorChan <- err
-				//cancel()
-				//continue
 			}
 		}()
 		c.logger.Debug("Consumed data", zap.Int("size", len(data)))
@@ -161,5 +156,5 @@ func (c *Consumer) SaveUserDetails(wg *sync.WaitGroup, inputChan chan []*models.
 }
 
 func (c *Consumer) Close() error {
-	return c.queue.Close()
+	return c.broker.Close()
 }

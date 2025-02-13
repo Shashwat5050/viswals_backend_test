@@ -1,4 +1,4 @@
-package mockdatabase
+package mockpostgres
 
 import (
 	"context"

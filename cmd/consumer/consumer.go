@@ -33,37 +33,33 @@ func main() {
 		return
 	}
 
+	// Initialize encryption service
 	encryptor, err := encryptions.New([]byte(os.Getenv("ENCRYPTION_KEY")))
 	if err != nil {
 		log.Error("encryption key not provided or invalid ", zap.Error(err))
 		return
 	}
 
-	// initialize environment variables.
-	var DbUrl string
-	var cacheURL string
-	var QueueUrl string
+	// Fetch and validate environment variables for services
+	DbUrl := os.Getenv("POSTGRES_CONNECTION_STRING")
+	if DbUrl == "" {
+		log.Error("postgres connection string is not set")
+		return
+	}
+		
 
-	if url, ok := os.LookupEnv("POSTGRES_CONNECTION_STRING"); ok {
-		DbUrl = url
-	} else {
-		log.Error("postgres connection string is not set using default url")
+	cacheURL:= os.Getenv("REDIS_CONNECTION_STRING")
+	if cacheURL == "" {	
+		log.Error("redis connection string is not se")
 		return
 	}
 
-	if url, ok := os.LookupEnv("REDIS_CONNECTION_STRING"); ok {
-		cacheURL = url
-	} else {
-		log.Error("redis connection string is not set using default url")
+	QueueUrl := os.Getenv("RABBITMQ_CONNECTION_STRING")
+	if QueueUrl == "" {
+		log.Error("rabbitmq connection string is not set")		
 		return
 	}
 
-	if url, ok := os.LookupEnv("RABBITMQ_CONNECTION_STRING"); ok {
-		QueueUrl = url
-	} else {
-		log.Error("rabbitmq connection string is not set using default url")
-		return
-	}
 
 	// initializing database service.
 	dataStore, err := database.New(DbUrl)
@@ -72,6 +68,7 @@ func main() {
 		return
 	}
 
+	// Perform database migration if enabled
 	doMigration := strings.ToLower(os.Getenv("MIGRATION")) == "true"
 
 	if doMigration {
@@ -87,6 +84,7 @@ func main() {
 		}
 	}
 
+	// Set up Redis TTL (time-to-live)
 	ttlstr, ok := os.LookupEnv("REDIS_TTL")
 	if !ok {
 		ttlstr = defaultRedisTTLStr
@@ -119,12 +117,14 @@ func main() {
 		return
 	}
 
+	// Initialize data consumer
 	dataconsumer, err := services.NewConsumer(queueService, dataStore, memStore, encryptor, log)
 	if err != nil {
 		log.Error("can't initialise database throws error", zap.Error(err))
 		return
 	}
 
+	// Fetch and validate buffer size for channel
 	channelCapacity := os.Getenv("CHANNEL_SIZE")
 	if channelCapacity == "" {
 		log.Warn("Buffer size is not set using environment variable 'CHANNEL_SIZE', using default buffer size", zap.Any("buffer_size", defaultBufferSize))
@@ -152,22 +152,9 @@ func main() {
 	// Initialize Gin controller
 	ginController := controller.New(userService, log, controller.WithHttpMux(httpMux), controller.WithHttpPort(os.Getenv("HTTP_PORT")))
 
-	// Initialize Gin router
-	// router := gin.Default()
-	// registerRoutes(router, ginController)
-
-	// Start the HTTP server
-	// httpPort := os.Getenv("HTTP_PORT")
-	// if httpPort == "" {
-	// 	httpPort = "8080"
-	// 	log.Warn("HTTP_PORT is not set, using default port 8080")
-	// }
-
+	
 	log.Info("starting HTTP server", zap.String("port", ginController.HttpPort))
-	// err = router.Run(":" + httpPort)
-	// if err != nil {
-	// 	log.Error("failed to start HTTP server", zap.Error(err))
-	// }
+	
 	go func() {
 		defer wg.Done()
 		log.Info("starting http server", zap.String("port", ginController.HttpPort))
@@ -177,15 +164,8 @@ func main() {
 		}
 	}()
 
+	// Wait for goroutines to finish
 	log.Info("stopping consumer")
 	wg.Wait()
 }
 
-// func registerRoutes(router *gin.Engine, ctl *controller.Controller) {
-// 	router.GET("/users", ctl.GetAllUsers)
-// 	router.GET("/users/:id", ctl.GetUser)
-// 	router.POST("/users", ctl.CreateUser)
-// 	router.DELETE("/users/:id", ctl.DeleteUser)
-// 	router.GET("/users/sse", ctl.GetAllUsersSSE)
-// 	router.Static("/static", "./client")
-// }

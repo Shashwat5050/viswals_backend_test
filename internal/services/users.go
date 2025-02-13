@@ -12,13 +12,13 @@ import (
 )
 
 type UserService struct {
-	dataStore userStoreProvider
+	dataStore UserRepository
 	memStore  CacheManager
 	encryp *encryptions.Encryption
 	logger    *zap.Logger
 }
 
-func NewUserService(dataStore userStoreProvider, memStore CacheManager, encryption *encryptions.Encryption,logger *zap.Logger) *UserService {
+func NewUserService(dataStore UserRepository, memStore CacheManager, encryption *encryptions.Encryption,logger *zap.Logger) *UserService {
 	return &UserService{
 		dataStore: dataStore,
 		memStore:  memStore,

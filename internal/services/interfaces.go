@@ -12,7 +12,7 @@ type MessageBroker interface {
 	Close() error
 }
 
-type userStoreProvider interface {
+type UserRepository interface {
 	GetUserByID(context.Context, string) (*models.UserDetails, error)
 	CreateUser(context.Context, *models.UserDetails) error
 	CreateBulkUsers(context.Context, []*models.UserDetails) error

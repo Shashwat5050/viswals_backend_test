@@ -23,18 +23,21 @@ type Controller struct {
 
 type Option func(*Controller)
 
+// WithHttpMux sets a custom HTTP multiplexer for the Controller
 func WithHttpMux(httpMux *http.ServeMux) func(*Controller) {
 	return func(c *Controller) {
 		c.httpMux = httpMux
 	}
 }
 
+// WithHttpPort sets a custom HTTP port for the Controller
 func WithHttpPort(port string) func(*Controller) {
 	return func(c *Controller) {
 		c.HttpPort = port
 	}
 }
 
+// New creates a new Controller with optional configurations
 func New(userService UserService, logger *zap.Logger, opts ...Option) *Controller {
 	ctrl := &Controller{
 		UserService: userService,
@@ -46,6 +49,7 @@ func New(userService UserService, logger *zap.Logger, opts ...Option) *Controlle
 	return ctrl
 }
 
+// sendResponse sends a JSON response with status, message, and optional data
 func (c *Controller) sendResponse(ctx *gin.Context, statusCode int, message string, data interface{}) {
 	ctx.JSON(statusCode, gin.H{
 		"status_code": statusCode,
@@ -54,6 +58,7 @@ func (c *Controller) sendResponse(ctx *gin.Context, statusCode int, message stri
 	})
 }
 
+// Start initializes and starts the HTTP server
 func (c *Controller) Start() error {
 	c.registerRoutes()
 
@@ -67,12 +72,14 @@ func (c *Controller) Start() error {
 
 }
 
+// Ping is a health check endpoint to confirm the server is running
 func (c *Controller) Ping(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{
 		"message": "pong",
 	})
 }
 
+// registerRoutes sets up routes for HTTP endpoints
 func (ctrl *Controller) registerRoutes() {
 	router := gin.Default()
 
@@ -81,7 +88,8 @@ func (ctrl *Controller) registerRoutes() {
 	router.POST("/users", ctrl.CreateUser)
 	router.DELETE("/users/:id", ctrl.DeleteUser)
 	router.GET("/users/sse", ctrl.GetAllUsersSSE)
-	router.Static("/static", "./client")
+	router.Static("/static", "./web")
 
+	// Attach the Gin router to the HTTP multiplexer
 	ctrl.httpMux.Handle("/", router)
 }
